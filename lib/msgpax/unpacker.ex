@@ -29,6 +29,10 @@ defmodule Msgpax.UnpackError do
         "invalid format: #{inspect(bin)}"
       :incomplete ->
         "packet is incomplete"
+      {:non_struct_key, key, name} ->
+        "unknown key #{inspect(key)} for #{name} struct"
+      {:bad_struct, name} ->
+        "struct #{name} is unknown or is not loaded"
     end
   end
 end
@@ -120,13 +124,49 @@ defmodule Msgpax.Unpacker do
   end
 
   defp map(rest, opts, len, acc \\ [])
-  defp map(rest, _opts, 0, acc),
-    do: {Enum.into(Enum.reverse(acc), %{}), rest}
+  defp map(rest, opts, 0, acc) do
+    result =
+      Enum.reverse(acc)
+      |> Enum.into(%{})
+      |> build_struct(opts)
+    {result, rest}
+  end
 
   defp map(rest, opts, len, acc) do
     {key, rest} = transform(rest, opts)
     {val, rest} = transform(rest, opts)
-
     map(rest, opts, len - 1, [{key, val} | acc])
   end
+
+  def build_struct(%{"__struct__" => "Elixir." <> name} = map, %{struct: true}) do
+    {module, map} = Map.pop(map, "__struct__")
+    try do
+      String.to_existing_atom(module)
+    rescue
+      ArgumentError ->
+        throw {:bad_struct, name}
+    else
+      module ->
+        unless function_exported?(module, :__struct__, 0) do
+          throw {:bad_struct, name}
+        end
+        Enum.reduce map, module.__struct__(), fn({key, val}, struct) ->
+          try do
+            String.to_existing_atom(key)
+          rescue
+            ArgumentError ->
+              throw {:non_struct_key, key, name}
+          else
+            key ->
+              if Map.has_key?(struct, key) do
+                Map.put(struct, key, val)
+              else
+                throw {:non_struct_key, key, name}
+              end
+          end
+        end
+    end
+  end
+
+  def build_struct(map, _opts), do: map
 end

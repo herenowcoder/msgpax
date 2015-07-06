@@ -219,4 +219,24 @@ defmodule MsgpaxTest do
       Msgpax.pack!(%URI{})
     end
   end
+
+  test "unpack struct" do
+    data = %{"__struct__" => "Elixir.URI", "port" => 4004}
+    packed = Msgpax.pack!(data)
+    assert Msgpax.unpack!(packed) == data
+    assert Msgpax.unpack!(packed, %{struct: true}) == %URI{port: 4004}
+
+    data = %{"__struct__" => "URI"}
+    packed = Msgpax.pack!(data)
+    assert Msgpax.unpack!(packed, %{struct: true}) == data
+
+    packed = Msgpax.pack!(%{"__struct__" => "Elixir.URI", "other" => true})
+    assert_error unpack(packed, %{struct: true}), {:non_struct_key, :other, "URI"}
+
+    packed = Msgpax.pack!(%{"__struct__" => "Elixir.uri"})
+    assert_error unpack(packed, %{struct: true}), {:bad_struct, "uri"}
+
+    packed = Msgpax.pack!(%{"__struct__" => "Elixir.Kernel"})
+    assert_error unpack(packed, %{struct: true}), {:bad_struct, "Kernel"}
+  end
 end
